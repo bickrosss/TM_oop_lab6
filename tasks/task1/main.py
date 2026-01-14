@@ -3,50 +3,76 @@
 
 import logging
 import sys
+import getpass
 from models import UserManager
 from storage import UserStorage
-from exceptions import *
+from exceptions import (
+    UnauthorizedAccessError, 
+    InvalidLoginError, 
+    UnknownCommandError, 
+    DataFormatError,
+    InvalidPasswordError
+)
+
+
+def setup_logging() -> None:
+    """Настройка системы логирования."""
+    logging.basicConfig(
+        filename='auth_system.log',
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        encoding='utf-8'
+    )
 
 
 def print_help() -> None:
     """Вывод справки по командам."""
     help_text = """
 Доступные команды:
-  add <логин>           - Добавить нового пользователя
-  auth <логин> <пароль> - Авторизовать пользователя (пароль: password123)
-  logout <логин>        - Выйти из системы
-  access <логин>        - Проверить доступ к ресурсу
-  list                  - Показать всех пользователей
-  select_auth           - Показать авторизованных пользователей
-  select <префикс>      - Показать пользователей с логином на <префикс>
-  save <файл.xml>       - Сохранить в XML
-  load <файл.xml>       - Загрузить из XML
-  help                  - Показать справку
-  exit                  - Выйти
+  add <логин>             - Добавить нового пользователя (запросит пароль)
+  auth <логин>            - Аутентифицировать пользователя (запросит пароль)
+  logout <логин>          - Выйти из системы
+  access <логин>          - Проверить доступ к ресурсу
+  changepass <логин>      - Сменить пароль (запросит старый и новый пароли)
+  list                    - Показать всех пользователей
+  list_auth               - Показать аутентифицированных пользователей
+  save <файл.xml>         - Сохранить пользователей в XML
+  load <файл.xml>         - Загрузить пользователей из XML
+  help                    - Показать эту справку
+  exit                    - Выйти из программы
+  
+Требования к паролю:
+  - Не менее 6 символов
+  - Рекомендуется использовать буквы, цифры и специальные символы
 """
     print(help_text)
 
 
+def get_password(prompt: str = "Пароль: ") -> str:
+    """Безопасный ввод пароля."""
+    return getpass.getpass(prompt)
+
+
 def main() -> None:
-    """Главная функция программы."""
-    # Настройка логирования
-    logging.basicConfig(
-        filename='auth.log',
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s'
-    )
-    
+    """Основная функция программы."""
+    setup_logging()
     user_manager = UserManager()
     
-    print("Система управления пользователями")
-    print("Пароль по умолчанию: password123")
+    print("Система управления пользователями с безопасной аутентификацией")
+    print("=" * 60)
     print_help()
     
     while True:
         try:
             # Ввод команды
-            command = input(">>> ").strip().lower()
+            command_input = input("\n>>> ").strip()
+            if not command_input:
+                continue
             
+            parts = command_input.split()
+            command = parts[0].lower()
+            
+            # Обработка команд
             if command == 'exit':
                 logging.info("Завершение работы программы.")
                 print("До свидания!")
@@ -56,118 +82,116 @@ def main() -> None:
                 print_help()
                 logging.info("Вывод справки.")
             
-            elif command == 'list':
-                print(user_manager)
-                logging.info("Вывод списка пользователей.")
-            
-            elif command.startswith('add '):
-                parts = command.split(maxsplit=1)
-                if len(parts) < 2:
-                    print("Ошибка: укажите логин", file=sys.stderr)
+            elif command == 'add' and len(parts) >= 2:
+                login = parts[1]
+                print(f"Добавление пользователя: {login}")
+                password = get_password("Введите пароль (мин. 6 символов): ")
+                confirm = get_password("Повторите пароль: ")
+                
+                if password != confirm:
+                    print("Ошибка: пароли не совпадают!", file=sys.stderr)
                     continue
                 
-                login = parts[1]
-                user_manager.add(login)
-                print(f"Пользователь '{login}' добавлен.")
+                user = user_manager.add_user(login, password)
+                print(f"✓ Пользователь '{login}' успешно добавлен.")
                 logging.info(f"Добавлен пользователь: {login}")
             
-            elif command.startswith('auth '):
-                parts = command.split(maxsplit=2)
-                if len(parts) < 3:
-                    print("Ошибка: укажите логин и пароль", file=sys.stderr)
-                    continue
-                
-                login, password = parts[1], parts[2]
-                user_manager.authenticate(login, password)
-                print(f"Пользователь '{login}' авторизован.")
-                logging.info(f"Авторизован пользователь: {login}")
-            
-            elif command.startswith('logout '):
-                parts = command.split(maxsplit=1)
-                if len(parts) < 2:
-                    print("Ошибка: укажите логин", file=sys.stderr)
-                    continue
-                
+            elif command == 'auth' and len(parts) >= 2:
                 login = parts[1]
-                user_manager.logout(login)
-                print(f"Пользователь '{login}' вышел из системы.")
+                password = get_password(f"Пароль для {login}: ")
+                user = user_manager.authenticate_user(login, password)
+                print(f"✓ Пользователь '{login}' успешно аутентифицирован.")
+                logging.info(f"Аутентифицирован пользователь: {login}")
+            
+            elif command == 'logout' and len(parts) >= 2:
+                login = parts[1]
+                user = user_manager.logout_user(login)
+                print(f"✓ Пользователь '{login}' вышел из системы.")
                 logging.info(f"Выход пользователя: {login}")
             
-            elif command.startswith('access '):
-                parts = command.split(maxsplit=1)
-                if len(parts) < 2:
-                    print("Ошибка: укажите логин", file=sys.stderr)
-                    continue
-                
+            elif command == 'access' and len(parts) >= 2:
                 login = parts[1]
-                user = user_manager.find(login)
+                user = user_manager.get_user_or_raise(login)
                 result = user.access_resource()
-                print(result)
-                logging.info(f"Проверка доступа: {login}")
+                print(f"✓ {result}")
+                logging.info(f"Проверка доступа для пользователя: {login}")
             
-            elif command == 'select_auth':
-                auth_users = user_manager.select_authenticated()
-                if auth_users:
-                    print("Авторизованные пользователи:")
-                    for idx, user in enumerate(auth_users, 1):
-                        print(f"  {idx}. {user.login}")
-                    logging.info(f"Найдено {len(auth_users)} авторизованных пользователей.")
-                else:
-                    print("Нет авторизованных пользователей.")
-                    logging.info("Нет авторизованных пользователей.")
-            
-            elif command.startswith('select '):
-                parts = command.split(maxsplit=1)
-                if len(parts) < 2:
-                    print("Ошибка: укажите префикс", file=sys.stderr)
+            elif command == 'changepass' and len(parts) >= 2:
+                login = parts[1]
+                print(f"Смена пароля для пользователя: {login}")
+                old_password = get_password("Старый пароль: ")
+                new_password = get_password("Новый пароль (мин. 6 символов): ")
+                confirm = get_password("Повторите новый пароль: ")
+                
+                if new_password != confirm:
+                    print("Ошибка: новые пароли не совпадают!", file=sys.stderr)
                     continue
                 
-                prefix = parts[1]
-                selected = user_manager.select_by_prefix(prefix)
-                if selected:
-                    print(f"Пользователи с логином на '{prefix}':")
-                    for idx, user in enumerate(selected, 1):
-                        print(f"  {idx}. {user.login}")
-                    logging.info(f"Найдено {len(selected)} пользователей с префиксом '{prefix}'.")
+                user = user_manager.change_user_password(login, old_password, new_password)
+                print(f"✓ Пароль для пользователя '{login}' успешно изменен.")
+                logging.info(f"Смена пароля для пользователя: {login}")
+            
+            elif command == 'list':
+                user_manager.sort_users()
+                print("\n" + str(user_manager))
+                logging.info("Вывод списка всех пользователей.")
+            
+            elif command == 'list_auth':
+                auth_users = user_manager.get_authenticated_users()
+                if auth_users:
+                    print("\nАутентифицированные пользователи:")
+                    for idx, user in enumerate(auth_users, 1):
+                        print(f"{idx:>4}: {user.login}")
+                    logging.info(f"Вывод {len(auth_users)} аутентифицированных пользователей.")
                 else:
-                    print(f"Пользователи с логином на '{prefix}' не найдены.")
-                    logging.info(f"Пользователи с префиксом '{prefix}' не найдены.")
+                    print("\nНет аутентифицированных пользователей.")
+                    logging.info("Нет аутентифицированных пользователей.")
             
-            elif command.startswith('save '):
-                filename = command.split(maxsplit=1)[1]
-                UserStorage.save(user_manager.users, filename)
-                print(f"Данные сохранены в {filename}")
-                logging.info(f"Сохранение в файл: {filename}")
+            elif command == 'save' and len(parts) >= 2:
+                filename = parts[1]
+                UserStorage.save(user_manager.get_all_users(), filename)
+                print(f"✓ Данные сохранены в файл: {filename}")
+                logging.info(f"Сохранение данных в файл: {filename}")
             
-            elif command.startswith('load '):
-                filename = command.split(maxsplit=1)[1]
+            elif command == 'load' and len(parts) >= 2:
+                filename = parts[1]
                 users = UserStorage.load(filename)
                 user_manager.users = users
-                user_manager.users.sort(key=lambda u: u.login)
-                print(f"Данные загружены из {filename}")
-                logging.info(f"Загрузка из файла: {filename}")
+                user_manager.sort_users()
+                print(f"✓ Данные загружены из файла: {filename}")
+                print(f"  Загружено пользователей: {len(users)}")
+                logging.info(f"Загрузка данных из файла: {filename}")
             
             else:
-                raise UnknownCommandError(command)
+                raise UnknownCommandError(command_input)
         
         except KeyboardInterrupt:
-            print("\nПрограмма прервана.")
+            print("\n\nПрограмма прервана пользователем.")
+            logging.warning("Программа прервана пользователем (Ctrl+C).")
             break
         
         except UnknownCommandError as e:
-            print(f"Ошибка: {e}", file=sys.stderr)
+            print(f"\n✗ Ошибка: {e}", file=sys.stderr)
             logging.error(f"Неизвестная команда: {e}")
         
+        except InvalidLoginError as e:
+            print(f"\n✗ Ошибка авторизации: {e}", file=sys.stderr)
+            logging.error(f"Ошибка авторизации: {e}")
+        
         except UnauthorizedAccessError as e:
-            print(f"Ошибка доступа: {e}", file=sys.stderr)
+            print(f"\n✗ Ошибка доступа: {e}", file=sys.stderr)
             logging.error(f"Ошибка доступа: {e}")
         
-        except (InvalidLoginError, DataFormatError) as e:
-            print(f"Ошибка: {e}", file=sys.stderr)
-            logging.error(f"Ошибка: {e}")
+        except InvalidPasswordError as e:
+            print(f"\n✗ Ошибка пароля: {e}", file=sys.stderr)
+            logging.error(f"Ошибка пароля: {e}")
+        
+        except DataFormatError as e:
+            print(f"\n✗ Ошибка данных: {e}", file=sys.stderr)
+            logging.error(f"Ошибка данных: {e}")
         
         except Exception as e:
-            print(f"Непредвиденная ошибка: {e}", file=sys.stderr)
+            print(f"\n✗ Непредвиденная ошибка: {e}", file=sys.stderr)
             logging.error(f"Непредвиденная ошибка: {e}", exc_info=True)
 
 

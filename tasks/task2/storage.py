@@ -3,8 +3,8 @@
 
 import xml.etree.ElementTree as ET
 from typing import List
-from models import Product
-from exceptions import DataFormatError, InvalidPriceError
+from tasks.task2.models import Product
+from tasks.task2.exceptions import DataFormatError, InvalidPriceError
 
 
 class ProductStorage:
@@ -42,6 +42,7 @@ class ProductStorage:
         
         for product_element in root:
             try:
+                # Простой подход, который вызывает AttributeError если элемент не найден
                 name = product_element.find('name').text
                 store = product_element.find('store').text
                 price = float(product_element.find('price').text)
@@ -49,7 +50,11 @@ class ProductStorage:
                 product = Product(name=name, store=store, price=price)
                 products.append(product)
                 
-            except (AttributeError, ValueError) as e:
+            except AttributeError as e:
+                # AttributeError возникает если .find() вернет None или .text будет None
+                raise DataFormatError(filename, f"ошибка данных: {e}")
+            except ValueError as e:
+                # ValueError возникает при ошибке преобразования float
                 raise DataFormatError(filename, f"ошибка данных: {e}")
             except InvalidPriceError as e:
                 raise DataFormatError(filename, f"некорректная цена: {e}")

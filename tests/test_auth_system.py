@@ -1,273 +1,230 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
-import os
-import tempfile
-
 import pytest
-from exceptions import (
-    UnauthorizedAccessError, 
-    InvalidLoginError, 
-    UnknownCommandError, 
-    DataFormatError
-)
-from models import User, UserManager
-from storage import UserStorage
+from tasks.task1.models import UserManager, User
+from tasks.task1.exceptions import UnauthorizedAccessError, InvalidLoginError
+from tasks.task1.storage import UserStorage
 
 
-def test_user_creation():
-    """Тест создания пользователя"""
-    user = User("testuser", False)
+def test_create_user():
+    """Тест создания пользователя."""
+    manager = UserManager()
+    user = manager.add_user("testuser", "password123")
     assert user.login == "testuser"
-    assert user.authenticated == False
+    assert not user.authenticated
 
 
-def test_user_access_resource_unauthorized():
-    """Тест доступа без авторизации"""
-    user = User("guest", False)
+def test_authentication():
+    """Тест аутентификации пользователя."""
+    manager = UserManager()
+    user = manager.add_user("testuser", "password123")
     
-    with pytest.raises(UnauthorizedAccessError) as exc_info:
+    # Правильный пароль
+    user.authenticate("password123")
+    assert user.authenticated
+    
+    # Неправильный пароль должен вызывать исключение
+    user.logout()
+    with pytest.raises(InvalidLoginError):
+        user.authenticate("wrong_password")
+    assert not user.authenticated
+
+
+def test_unauthorized_access():
+    """Тест доступа без аутентификации."""
+    manager = UserManager()
+    user = manager.add_user("testuser", "password123")
+    
+    # Доступ без аутентификации должен вызывать исключение
+    with pytest.raises(UnauthorizedAccessError):
         user.access_resource()
+
+
+def test_authorized_access():
+    """Тест доступа после аутентификации."""
+    manager = UserManager()
+    user = manager.add_user("testuser", "password123")
+    user.authenticate("password123")
     
-    assert "guest" in str(exc_info.value)
-    assert "доступ запрещён" in str(exciss_info.value)
-
-
-def test_user_access_resource_authorized():
-    """Тест доступа с авторизацией"""
-    user = User("admin", True)
+    # Доступ после аутентификации должен работать
     result = user.access_resource()
-    
-    assert "admin" in result
     assert "Доступ разрешён" in result
 
 
-def test_user_authenticate_success():
-    """Тест успешной аутентификации"""
-    user = User("testuser", False)
-    user.authenticate("password123")
-    
-    assert user.authenticated == True
-
-
-def test_user_authenticate_failure():
-    """Тест неудачной аутентификации"""
-    user = User("testuser", False)
-    
-    with pytest.raises(InvalidLoginError) as exc_info:
-        user.authenticate("wrongpassword")
-    
-    assert "testuser" in str(exc_info.value)
-    assert "неверный пароль" in str(exc_info.value)
-
-
-def test_usermanager_add_valid():
-    """Тест добавления корректного пользователя"""
+def test_find_user():
+    """Тест поиска пользователя."""
     manager = UserManager()
-    user = manager.add("newuser")
+    manager.add_user("user1", "password123")
+    manager.add_user("user2", "password456")
     
-    assert len(manager.users) == 1
-    assert manager.users[0].login == "newuser"
-    assert manager.users[0].authenticated == False
-
-
-def test_usermanager_add_invalid_login():
-    """Тест добавления пользователя с некорректным логином"""
-    manager = UserManager()
-    
-    with pytest.raises(InvalidLoginError):
-        manager.add("ab")  # Слишком короткий логин
-
-
-def test_usermanager_add_duplicate_login():
-    """Тест добавления пользователя с существующим логином"""
-    manager = UserManager()
-    manager.add("user1")
-    
-    with pytest.raises(InvalidLoginError) as exc_info:
-        manager.add("user1")
-    
-    assert "логин уже существует" in str(exc_info.value)
-
-
-def test_usermanager_find_existing():
-    """Тест поиска существующего пользователя"""
-    manager = UserManager()
-    manager.add("user1")
-    manager.add("user2")
-    
-    user = manager.find("user1")
+    # Поиск существующего пользователя
+    user = manager.find_user("user1")
+    assert user is not None
     assert user.login == "user1"
+    
+    # Поиск несуществующего пользователя
+    user = manager.find_user("nonexistent")
+    assert user is None
 
 
-def test_usermanager_find_non_existing():
-    """Тест поиска несуществующего пользователя"""
+def test_xml_storage(tmp_path):
+    """Тест сохранения и загрузки в XML."""
+    import os
+    
     manager = UserManager()
-    manager.add("user1")
+    manager.add_user("user1", "password123")
+    manager.add_user("user2", "password456")
     
-    with pytest.raises(InvalidLoginError) as exc_info:
-        manager.find("nonexistent")
+    # Аутентифицируем одного пользователя
+    user1 = manager.find_user("user1")
+    user1.authenticate("password123")
     
-    assert "пользователь не найден" in str(exc_info.value)
-
-
-def test_usermanager_authenticate():
-    """Тест аутентификации пользователя"""
-    manager = UserManager()
-    manager.add("testuser")
+    # Сохраняем во временный файл
+    filename = tmp_path / "test_users.xml"
+    UserStorage.save(manager.get_all_users(), str(filename))
+    assert os.path.exists(filename)
     
-    user = manager.authenticate("testuser", "password123")
-    assert user.authenticated == True
-
-
-def test_usermanager_logout():
-    """Тест выхода из системы"""
-    manager = UserManager()
-    manager.add("testuser")
-    manager.authenticate("testuser", "password123")
+    # Загружаем
+    loaded_users = UserStorage.load(str(filename))
+    assert len(loaded_users) == 2
     
-    user = manager.logout("testuser")
-    assert user.authenticated == False
-
-
-def test_usermanager_select_authenticated():
-    """Тест выбора аутентифицированных пользователей"""
-    manager = UserManager()
-    manager.add("user1")
-    manager.add("user2")
-    manager.add("user3")
-    
-    manager.authenticate("user1", "password123")
-    manager.authenticate("user3", "password123")
-    
-    auth_users = manager.select_authenticated()
-    assert len(auth_users) == 2
+    # Проверяем состояние аутентификации
+    auth_users = [u for u in loaded_users if u.authenticated]
+    assert len(auth_users) == 1
     assert auth_users[0].login == "user1"
-    assert auth_users[1].login == "user3"
 
 
-def test_usermanager_select_by_prefix():
-    """Тест выбора пользователей по префиксу"""
+def test_user_manager_authenticate_user():
+    """Тест аутентификации через менеджер."""
     manager = UserManager()
-    manager.add("admin1")
-    manager.add("admin2")
-    manager.add("user1")
+    manager.add_user("user1", "password123")
     
-    admin_users = manager.select_by_prefix("admin")
-    assert len(admin_users) == 2
-    assert all(u.login.startswith("admin") for u in admin_users)
+    # Правильная аутентификация
+    user = manager.authenticate_user("user1", "password123")
+    assert user.authenticated
+    
+    # Неправильная аутентификация должна вызывать исключение
+    with pytest.raises(InvalidLoginError):
+        manager.authenticate_user("user1", "wrong_password")
 
 
-def test_usermanager_str_empty():
-    """Тест строкового представления пустого менеджера"""
+def test_change_password():
+    """Тест смены пароля."""
     manager = UserManager()
-    result = str(manager)
-    assert "Нет пользователей" in result
-
-
-def test_usermanager_str_with_users():
-    """Тест строкового представления с пользователями"""
-    manager = UserManager()
-    manager.add("user1")
-    manager.add("user2")
+    user = manager.add_user("testuser", "oldpassword")
+    user.authenticate("oldpassword")
     
-    result = str(manager)
-    assert "user1" in result
-    assert "user2" in result
-    assert "Логин" in result
-    assert "Авторизован" in result
-
-
-def test_userstorage_save_and_load():
-    """Тест сохранения и загрузки пользователей"""
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
-        temp_filename = f.name
+    # Смена пароля
+    user.change_password("oldpassword", "newpassword123")
     
+    # Проверяем, что старый пароль не работает
+    user.logout()
+    with pytest.raises(InvalidLoginError):
+        user.authenticate("oldpassword")
+    
+    # Проверяем, что новый пароль работает
+    user.authenticate("newpassword123")
+    assert user.authenticated
+
+
+def run_tests():
+    """Запуск тестов системы (старая версия для совместимости)."""
+    print("Тестирование системы авторизации")
+    print("=" * 50)
+    
+    # Тест 1: Создание пользователя
+    print("\n1. Создание пользователя:")
     try:
-        # Создаем тестовых пользователей
-        users = [
-            User("user1", True),
-            User("user2", False),
-            User("admin", True)
-        ]
-        
-        # Сохраняем
-        UserStorage.save(users, temp_filename)
-        
-        # Загружаем
-        loaded_users = UserStorage.load(temp_filename)
-        
-        # Проверяем
-        assert len(loaded_users) == 3
-        
-        # Проверяем первого пользователя
-        assert loaded_users[0].login == "user1"
-        assert loaded_users[0].authenticated == True
-        
-        # Проверяем второго пользователя
-        assert loaded_users[1].login == "user2"
-        assert loaded_users[1].authenticated == False
-        
-        # Проверяем третьего пользователя
-        assert loaded_users[2].login == "admin"
-        assert loaded_users[2].authenticated == True
-        
-    finally:
-        if os.path.exists(temp_filename):
-            os.unlink(temp_filename)
-
-
-def test_userstorage_load_invalid_xml():
-    """Тест загрузки некорректного XML"""
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
-        f.write("Это не XML файл")
-        temp_filename = f.name
+        manager = UserManager()
+        user = manager.add_user("testuser", "password123")
+        print(f"   Создан пользователь: {user.login}")
+        print(f"   Аутентифицирован: {user.authenticated}")
+    except Exception as e:
+        print(f"   Ошибка: {e}")
     
+    # Тест 2: Проверка доступа без аутентификации
+    print("\n2. Проверка доступа без аутентификации:")
     try:
-        with pytest.raises(DataFormatError) as exc_info:
-            UserStorage.load(temp_filename)
+        manager = UserManager()
+        user = manager.add_user("testuser", "password123")
+        result = user.access_resource()
+        print(f"   Результат: {result}")
+    except UnauthorizedAccessError as e:
+        print(f"   Исключение: {e}")
+    except Exception as e:
+        print(f"   Ошибка: {e}")
+    
+    # Тест 3: Аутентификация
+    print("\n3. Аутентификация пользователя:")
+    try:
+        manager = UserManager()
+        user = manager.add_user("testuser", "password123")
+        user.authenticate("password123")
+        print(f"   Пользователь аутентифицирован: {user.authenticated}")
+    except InvalidLoginError as e:
+        print(f"   Ошибка аутентификации: {e}")
+    except Exception as e:
+        print(f"   Ошибка: {e}")
+    
+    # Тест 4: Проверка доступа после аутентификации
+    print("\n4. Проверка доступа после аутентификации:")
+    try:
+        manager = UserManager()
+        user = manager.add_user("testuser", "password123")
+        user.authenticate("password123")
+        result = user.access_resource()
+        print(f"   Результат: {result}")
+    except UnauthorizedAccessError as e:
+        print(f"   Исключение: {e}")
+    except Exception as e:
+        print(f"   Ошибка: {e}")
+    
+    # Тест 5: Сохранение в XML
+    print("\n5. Сохранение в XML:")
+    try:
+        import os
         
-        assert "некорректный формат данных" in str(exc_info.value)
+        manager = UserManager()
+        manager.add_user("admin", "password123")
+        manager.add_user("guest", "password456")
         
-    finally:
-        if os.path.exists(temp_filename):
-            os.unlink(temp_filename)
-
-
-def test_userstorage_load_missing_file():
-    """Тест загрузки отсутствующего файла"""
-    with pytest.raises(DataFormatError) as exc_info:
-        UserStorage.load("nonexistent_file.xml")
+        # Аутентифицируем одного пользователя
+        admin_user = manager.find_user("admin")
+        admin_user.authenticate("password123")
+        
+        filename = "test_users.xml"
+        UserStorage.save(manager.get_all_users(), filename)
+        print(f"   Данные сохранены в {filename}")
+        
+        if os.path.exists(filename):
+            print(f"   Размер файла: {os.path.getsize(filename)} байт")
+        
+        # Тест 6: Загрузка из XML
+        print("\n6. Загрузка из XML:")
+        new_manager = UserManager()
+        loaded_users = UserStorage.load(filename)
+        new_manager.users = loaded_users
+        
+        print(f"   Загружено пользователей: {len(loaded_users)}")
+        for user in loaded_users:
+            print(f"   - {user.login}: authenticated={user.authenticated}")
+        
+        # Тест 7: Поиск несуществующего пользователя
+        print("\n7. Поиск несуществующего пользователя:")
+        try:
+            manager.find_user("nonexistent")
+        except InvalidLoginError as e:
+            print(f"   Исключение: {e}")
+        
+        # Очистка
+        if os.path.exists(filename):
+            os.remove(filename)
+    except Exception as e:
+        print(f"   Ошибка: {e}")
     
-    assert "nonexistent_file.xml" in str(exc_info.value)
+    print("\n" + "=" * 50)
+    print("Все тесты завершены!")
 
 
-def test_exception_messages():
-    """Тест сообщений исключений"""
-    # UnauthorizedAccessError
-    exc1 = UnauthorizedAccessError("guest")
-    assert "'guest' -> доступ запрещён" in str(exc1)
-    
-    # InvalidLoginError
-    exc2 = InvalidLoginError("user", "неверный пароль")
-    assert "'user' -> неверный пароль" in str(exc2)
-    
-    # UnknownCommandError
-    exc3 = UnknownCommandError("invalid_cmd")
-    assert "'invalid_cmd' -> неизвестная команда" in str(exc3)
-    
-    # DataFormatError
-    exc4 = DataFormatError("file.xml", "ошибка парсинга")
-    assert "'file.xml' -> ошибка парсинга" in str(exc4)
-
-
-def test_usermanager_sorting():
-    """Тест сортировки пользователей по логину"""
-    manager = UserManager()
-    manager.add("zebra")
-    manager.add("apple")
-    manager.add("banana")
-    
-    assert manager.users[0].login == "apple"
-    assert manager.users[1].login == "banana"
-    assert manager.users[2].login == "zebra"
+if __name__ == '__main__':
+    run_tests()

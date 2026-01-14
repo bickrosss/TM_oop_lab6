@@ -31,3 +31,10 @@ class DataFormatError(Exception):
         self.filename = filename
         self.message = message
         super().__init__(f"'{filename}' -> {message}")
+
+
+class InvalidPasswordError(Exception):
+    """Исключение при некорректном пароле."""
+    def __init__(self, message="некорректный пароль"):
+        self.message = message
+        super().__init__(message)

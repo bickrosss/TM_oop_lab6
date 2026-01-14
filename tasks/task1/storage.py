@@ -3,8 +3,8 @@
 
 import xml.etree.ElementTree as ET
 from typing import List
-from models import User
-from exceptions import DataFormatError
+from tasks.task1.models import User
+from tasks.task1.exceptions import DataFormatError
 
 
 class UserStorage:
@@ -18,8 +18,17 @@ class UserStorage:
         for user in users:
             user_element = ET.Element('user')
             
-            ET.SubElement(user_element, 'login').text = user.login
-            ET.SubElement(user_element, 'authenticated').text = str(user.authenticated).lower()
+            login_element = ET.SubElement(user_element, 'login')
+            login_element.text = user.login
+            
+            password_hash_element = ET.SubElement(user_element, 'password_hash')
+            password_hash_element.text = user.password_hash
+            
+            salt_element = ET.SubElement(user_element, 'salt')
+            salt_element.text = user.salt
+            
+            authenticated_element = ET.SubElement(user_element, 'authenticated')
+            authenticated_element.text = str(user.authenticated).lower()
             
             root.append(user_element)
         
@@ -40,15 +49,34 @@ class UserStorage:
         users = []
         
         for user_element in root:
-            try:
-                login = user_element.find('login').text
-                auth_text = user_element.find('authenticated').text
-                authenticated = auth_text.lower() == 'true'
-                
-                user = User(login=login, authenticated=authenticated)
+            login = None
+            password_hash = None
+            salt = None
+            authenticated = False
+            
+            for element in user_element:
+                if element.tag == 'login':
+                    login = element.text
+                elif element.tag == 'password_hash':
+                    password_hash = element.text
+                elif element.tag == 'salt':
+                    salt = element.text
+                elif element.tag == 'authenticated':
+                    try:
+                        authenticated = element.text.lower() == 'true'
+                    except AttributeError:
+                        authenticated = False
+            
+            if all([login, password_hash, salt]):
+                # Создаем нового пользователя с нужным состоянием
+                user = User(
+                    login=login, 
+                    password_hash=password_hash,
+                    salt=salt,
+                    authenticated=authenticated
+                )
                 users.append(user)
-                
-            except (AttributeError, ValueError) as e:
-                raise DataFormatError(filename, f"ошибка данных: {e}")
+            else:
+                raise DataFormatError(filename, "неполные данные пользователя")
         
         return users

@@ -23,4 +23,4 @@ python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
 addopts = "-v --import-mode=append"
-pythonpath = [".","tasks", "tasks/task2","examples"]
+pythonpath = [".","tasks","examples"]

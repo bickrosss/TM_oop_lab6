@@ -3,7 +3,7 @@
 
 from dataclasses import dataclass, field
 from typing import List
-from exceptions import InvalidPriceError, StoreNotFoundError
+from tasks.task2.exceptions import InvalidPriceError, StoreNotFoundError
 
 
 @dataclass(frozen=True)

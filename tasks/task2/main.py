@@ -3,9 +3,9 @@
 
 import logging
 import sys
-from models import ProductCatalog
-from storage import ProductStorage
-from exceptions import *
+from tasks.task2.models import ProductCatalog
+from tasks.task2.storage import ProductStorage
+from tasks.task2.exceptions import *
 
 
 def print_help() -> None:
