@@ -3,8 +3,8 @@
 
 import xml.etree.ElementTree as ET
 from typing import List
-from tasks.task1.models import User
-from tasks.task1.exceptions import DataFormatError
+from models import User
+from exceptions import DataFormatError
 
 
 class UserStorage:
