@@ -6,7 +6,7 @@ from typing import List, Optional
 import hashlib
 import secrets
 import string
-from tasks.task1.exceptions import UnauthorizedAccessError, InvalidLoginError, InvalidPasswordError
+from exceptions import UnauthorizedAccessError, InvalidLoginError, InvalidPasswordError
 
 
 def hash_password(password: str, salt: str) -> str:
